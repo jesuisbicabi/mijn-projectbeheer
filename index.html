@@ -283,17 +283,12 @@ textarea.fc{resize:vertical;min-height:72px;}
 .pinned-rot,.note-toggle{font-size:10px;display:inline-block;transition:transform .2s;cursor:pointer;padding:2px 4px;border-radius:3px;line-height:1;flex-shrink:0;}
 .pinned-rot{color:rgba(0,0,0,.3);}
 .pinned-rot.is-open{transform:rotate(90deg);}
-.note-toggle{color:rgba(255,255,255,.35);}
-.note-toggle:hover{color:rgba(255,255,255,.75);background:rgba(255,255,255,.1);}
+.note-toggle{color:rgba(0,0,0,.3);}
+.note-toggle:hover{color:rgba(0,0,0,.55);background:rgba(0,0,0,.05);}
 .note-toggle.is-open{transform:rotate(90deg);}
 .pbh-toggle{transition:transform .2s;}
 .proj-block:not(.is-collapsed) .pbh-toggle{transform:rotate(90deg);}
 
-/* VOORTGANGSBALK PER PROJECT */
-.pbh-progress{flex-shrink:0;display:flex;align-items:center;gap:6px;margin-right:4px;}
-.pbh-prog-bar{width:60px;height:5px;background:#e0e4e8;border-radius:3px;overflow:hidden;}
-.pbh-prog-fill{height:100%;background:var(--green);border-radius:3px;transition:width .3s;}
-.pbh-prog-pct{font-size:10px;color:var(--muted);min-width:28px;text-align:right;}
 
 /* ZOEKBALK */
 .sb-search{padding:6px 10px;flex-shrink:0;}
@@ -929,7 +924,6 @@ function renderProjectBlock(cat, proj) {
       <div class="pbh-info">
         <span class="pbh-name">${esc(proj.name)}</span>${proj.description?`<span class="mh-sep"> — </span><span class="pbh-desc">${esc(proj.description)}</span>`:''}
       </div>
-      ${projProgressHtml(proj)}
       <div class="pbh-acts">
         <button class="btn btn-secondary" style="font-size:11px;padding:4px 9px;" onclick="st.catId='${cat.id}';st.projId='${proj.id}';openCentralLog('${proj.id}')">📋 Log</button>
         <button class="btn btn-secondary" style="font-size:11px;padding:4px 9px;" onclick="pinAll('${cat.id}','${proj.id}',true)" title="Alles pinnen">📌+</button>
@@ -1119,18 +1113,6 @@ function drawCrossProjectArrows(cat) {
 // ═══════════════════════════════════════════════════════
 // WITHIN-PROJECT ARCS (#12)
 // ═══════════════════════════════════════════════════════
-function projProgressHtml(proj) {
-  const all = proj.tasks.filter(t => !t.subtasks?.length || !t.isExpanded);
-  const allCount = proj.tasks.length;
-  if (!allCount) return '';
-  const doneCount = proj.tasks.filter(t => t.status === 'klaar').length;
-  const pct = Math.round(doneCount / allCount * 100);
-  return `<div class="pbh-progress" title="${doneCount}/${allCount} afgerond">
-    <div class="pbh-prog-bar"><div class="pbh-prog-fill" style="width:${pct}%"></div></div>
-    <span class="pbh-prog-pct">${pct}%</span>
-  </div>`;
-}
-
 function drawWithinProjectArrows(proj) {
   const areaEl = document.getElementById('pta-' + proj.id);
   if (!areaEl) return;

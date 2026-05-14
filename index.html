@@ -426,6 +426,9 @@ function load() {
   // Backward compat: archived veld op categorieën
   for (const c of (db.categories||[])) {
     if (c.archived === undefined) c.archived = false;
+    for (const p of (c.projects||[])) {
+      if (p.archived === undefined) p.archived = false;
+    }
   }
   // Backward compat: fileName
   if (!db.fileName) db.fileName = 'Projectbeheer';
@@ -619,35 +622,39 @@ function renderMain() {
   const cat = getCat(st.catId);
   if (!cat) { st.catId = null; renderMain(); return; }
 
+  const activeProjs = cat.projects.filter(p => !p.archived);
+  const archivedProjs = cat.projects.filter(p => p.archived);
+  const archSecOpen = st.archiveOpen;
   m.innerHTML = `
     <div class="main-header">
       <div class="mh-info">
-        <span class="mh-title">${esc(cat.name)}</span><span class="mh-sep"> — </span><span class="mh-sub">${cat.projects.length} project${cat.projects.length!==1?'en':''}</span>
+        <span class="mh-title">${esc(cat.name)}</span><span class="mh-sep"> — </span><span class="mh-sub">${activeProjs.length} project${activeProjs.length!==1?'en':''}</span>
       </div>
       <div class="mh-acts">
         <button class="btn btn-primary" onclick="addProject('${cat.id}')">+ Nieuw project</button>
       </div>
     </div>
     <div class="cat-projects" id="cat-projects">
-      ${cat.projects.length
-        ? cat.projects.map(p => renderProjectBlock(cat, p)).join('')
+      ${activeProjs.length
+        ? activeProjs.map(p => renderProjectBlock(cat, p)).join('')
         : `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted);padding:60px 0;">
             <div style="font-size:44px;opacity:.2;">📂</div>
             <div style="font-size:15px;font-weight:600;">Geen projecten</div>
             <div style="font-size:13px;">Klik "+ Nieuw project" om te beginnen.</div>
           </div>`}
+      ${archivedProjs.length ? `
+        <div style="border-top:1px solid var(--border);margin-top:12px;padding-top:6px;">
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;color:var(--muted);font-size:12px;user-select:none;" onclick="st.archiveOpen=!st.archiveOpen;renderMain()">
+            <span style="transition:transform .2s;display:inline-block;${archSecOpen?'transform:rotate(90deg)':''}">▶</span>
+            <span>Gearchiveerde projecten (${archivedProjs.length})</span>
+          </div>
+          ${archSecOpen ? archivedProjs.map(p => renderProjectBlock(cat, p)).join('') : ''}
+        </div>` : ''}
     </div>`;
 
-  cat.projects.forEach(p => { if (!st.collapsedProjs.has(p.id)) attachDrag(p); });
-  requestAnimationFrame(() => {
-    drawCrossProjectArrows(cat);
-    cat.projects.forEach(p => { if (!st.collapsedProjs.has(p.id)) drawWithinProjectArrows(p); });
-  });
-  window.onresize = () => {
-    const c = getCat(st.catId);
-    drawCrossProjectArrows(c);
-    if (c) c.projects.forEach(p => { if (!st.collapsedProjs.has(p.id)) drawWithinProjectArrows(p); });
-  };
+  activeProjs.forEach(p => { if (!st.collapsedProjs.has(p.id)) attachDrag(p); });
+  requestAnimationFrame(() => { drawCrossProjectArrows(cat); });
+  window.onresize = () => { const c = getCat(st.catId); drawCrossProjectArrows(c); };
 }
 
 // Pinned note — collapsible (voor enkelvoudige projectweergave)
@@ -929,6 +936,9 @@ function renderProjectBlock(cat, proj) {
         <button class="btn btn-secondary" style="font-size:11px;padding:4px 9px;" onclick="pinAll('${cat.id}','${proj.id}',true)" title="Alles pinnen">📌+</button>
         <button class="btn btn-secondary" style="font-size:11px;padding:4px 9px;" onclick="pinAll('${cat.id}','${proj.id}',false)" title="Alles losmaken">📌−</button>
         <button class="btn btn-secondary" style="font-size:11px;padding:4px 9px;" onclick="st.catId='${cat.id}';st.projId='${proj.id}';editProjectMeta()">⚙</button>
+        ${proj.archived
+          ? `<button class="btn btn-secondary" style="font-size:11px;padding:4px 9px;" onclick="unarchiveProject('${cat.id}','${proj.id}')" title="Uit archief halen">↩ Herstel</button>`
+          : `<button class="btn btn-secondary" style="font-size:11px;padding:4px 9px;" onclick="archiveProject('${cat.id}','${proj.id}')" title="Project archiveren">🗄</button>`}
         <button class="btn btn-primary"   style="font-size:11px;padding:4px 9px;" onclick="st.catId='${cat.id}';st.projId='${proj.id}';openNewTask()">+ Taak</button>
       </div>
     </div>
@@ -1310,7 +1320,7 @@ function addProject(cid) {
   const n = prompt('Naam van het nieuwe project:'); if (!n?.trim()) return;
   const c = getCat(cid); if (!c) return;
   pushUndo();
-  const p = {id:uid(),name:n.trim(),description:'',pinnedNote:'',tasks:[]};
+  const p = {id:uid(),name:n.trim(),description:'',pinnedNote:'',tasks:[],archived:false};
   c.projects.push(p); save();
   st.catId=cid; st.projId=p.id; st.view='project'; render();
   setTimeout(() => { const el=document.getElementById('pb-'+p.id); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); }, 120);
@@ -1327,6 +1337,14 @@ function deleteProject(cid,pid) {
   getCat(cid).projects = getCat(cid).projects.filter(x => x.id!==pid);
   if (st.projId===pid) st.projId=null;
   save(); render();
+}
+function archiveProject(cid,pid) {
+  const p = getProj(cid,pid); if (!p) return;
+  pushUndo(); p.archived=true; save(); renderMain();
+}
+function unarchiveProject(cid,pid) {
+  const p = getProj(cid,pid); if (!p) return;
+  pushUndo(); p.archived=false; save(); renderMain();
 }
 function editProjectMeta() {
   const proj = getProj(st.catId,st.projId); if (!proj) return;

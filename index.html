@@ -21,7 +21,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .sb-head-btns{display:flex;gap:6px;}
 .sb-btn{background:rgba(255,255,255,.1);border:none;color:#ecf0f1;border-radius:6px;padding:5px 9px;font-size:11px;cursor:pointer;transition:background .15s;font-family:inherit;}
 .sb-btn:hover{background:rgba(255,255,255,.2);}
-.sb-nav{flex:1;overflow-y:auto;padding:6px 0;}
+.sb-nav{overflow-y:auto;padding:6px 0;}
+.sb-nav-wrap{flex:1;overflow-y:auto;display:flex;flex-direction:column;}
 .cat-wrap{margin-bottom:1px;}
 .cat-row{display:flex;align-items:center;padding:7px 10px 7px 14px;cursor:pointer;transition:background .15s;gap:6px;user-select:none;}
 .cat-row:hover{background:var(--sidebar-hover);}
@@ -283,6 +284,41 @@ textarea.fc{resize:vertical;min-height:72px;}
 .proj-collapsed-info{padding:9px 16px 9px 46px;font-size:12px;color:var(--muted);}
 .cross-proj-indicator{color:var(--accent);font-weight:500;}
 .cat-row.cat-active{background:var(--sidebar-active) !important;}
+
+/* ROTERENDE PIJLEN — notitie-toggle en pbh-toggle */
+.pinned-rot,.note-toggle{font-size:10px;display:inline-block;transition:transform .2s;cursor:pointer;padding:2px 4px;border-radius:3px;line-height:1;flex-shrink:0;}
+.pinned-rot{color:rgba(0,0,0,.3);}
+.pinned-rot.is-open{transform:rotate(90deg);}
+.note-toggle{color:rgba(255,255,255,.35);}
+.note-toggle:hover{color:rgba(255,255,255,.75);background:rgba(255,255,255,.1);}
+.note-toggle.is-open{transform:rotate(90deg);}
+.pbh-toggle{transition:transform .2s;}
+.proj-block:not(.is-collapsed) .pbh-toggle{transform:rotate(90deg);}
+
+/* VOORTGANGSBALK PER PROJECT */
+.pbh-progress{flex-shrink:0;display:flex;align-items:center;gap:6px;margin-right:4px;}
+.pbh-prog-bar{width:60px;height:5px;background:#e0e4e8;border-radius:3px;overflow:hidden;}
+.pbh-prog-fill{height:100%;background:var(--green);border-radius:3px;transition:width .3s;}
+.pbh-prog-pct{font-size:10px;color:var(--muted);min-width:28px;text-align:right;}
+
+/* ZOEKBALK */
+.sb-search{padding:6px 10px;flex-shrink:0;}
+.sb-search input{width:100%;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);border-radius:6px;color:#ecf0f1;padding:5px 8px;font-size:12px;font-family:inherit;outline:none;transition:background .15s;}
+.sb-search input::placeholder{color:rgba(255,255,255,.35);}
+.sb-search input:focus{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.35);}
+.search-results{position:absolute;left:0;right:0;top:100%;background:var(--sidebar);border-top:1px solid rgba(255,255,255,.1);z-index:50;max-height:260px;overflow-y:auto;}
+.sr-item{padding:7px 14px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.06);transition:background .1s;}
+.sr-item:hover{background:var(--sidebar-hover);}
+.sr-title{font-size:12px;color:#ecf0f1;}
+.sr-proj{font-size:10px;color:rgba(255,255,255,.45);margin-top:1px;}
+.sb-nav-wrap{flex:1;overflow-y:auto;position:relative;}
+
+/* BINNEN-PROJECT ARCS & VERBINDINGSPORT (#12) */
+.proj-tl-area{position:relative;}
+.conn-port{position:absolute;right:-7px;top:50%;transform:translateY(-50%);width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid #fff;cursor:crosshair;opacity:0;transition:opacity .15s,transform .15s;z-index:10;box-shadow:0 1px 4px rgba(0,0,0,.25);}
+.card:hover .conn-port{opacity:.7;}
+.conn-port:hover{opacity:1!important;transform:translateY(-50%) scale(1.25);}
+.card.conn-target{outline:2px solid var(--accent);outline-offset:3px;box-shadow:0 0 0 5px rgba(52,152,219,.12);}
 </style>
 </head>
 <body>
@@ -295,7 +331,13 @@ textarea.fc{resize:vertical;min-height:72px;}
       <label class="sb-btn" style="cursor:pointer">⬆ Import<input type="file" accept=".json" onchange="importData(event)" hidden></label>
     </div>
   </div>
-  <nav id="sb-nav" class="sb-nav"></nav>
+  <div class="sb-search">
+    <input id="sb-search-inp" type="text" placeholder="🔍 Zoek taken…" oninput="onSearch(this.value)" autocomplete="off">
+    <div class="search-results" id="search-results" style="display:none;"></div>
+  </div>
+  <div class="sb-nav-wrap">
+    <nav id="sb-nav" class="sb-nav"></nav>
+  </div>
   <div class="sb-foot">
     <div id="dl-nav" class="dl-nav" onclick="showView('deadlines')">📅 Naderende deadlines</div>
     <button class="sb-add-cat" onclick="addCategory()">+ Nieuwe categorie</button>
@@ -537,9 +579,12 @@ function renderMain() {
   cat.projects.forEach(p => { if (!st.collapsedProjs.has(p.id)) attachDrag(p); });
   requestAnimationFrame(() => {
     drawCrossProjectArrows(cat);
+    cat.projects.forEach(p => { if (!st.collapsedProjs.has(p.id)) drawWithinProjectArrows(p); });
   });
   window.onresize = () => {
-    drawCrossProjectArrows(getCat(st.catId));
+    const c = getCat(st.catId);
+    drawCrossProjectArrows(c);
+    if (c) c.projects.forEach(p => { if (!st.collapsedProjs.has(p.id)) drawWithinProjectArrows(p); });
   };
 }
 
@@ -759,6 +804,7 @@ function cardHtml(task, proj, parentTask) {
   return `<div class="card c-${status}${subCls}" data-tid="${task.id}" ${isSub?`data-parent="${parentTask.id}"`:(!task.pinned && !task.depPinned?'draggable="true"':'')}>
     ${pinBtn}
     ${!isSub && !task.pinned && !task.depPinned?'<span class="drag-hdl">⠿</span>':''}
+    ${!isSub?`<div class="conn-port" title="Sleep om verbinding te maken" onmousedown="startConnDrag(event,'${task.id}','${proj.id}')"></div>`:''}
     <div class="card-head ch-${status}">
       <span class="badge b-${status}">${statusLabels[status]||status}</span>
       <div class="card-title">${esc(task.title)}</div>
@@ -843,6 +889,7 @@ function renderProjectBlock(cat, proj) {
       <div class="pbh-info">
         <span class="pbh-name">${esc(proj.name)}</span>${proj.description?`<span class="mh-sep"> — </span><span class="pbh-desc">${esc(proj.description)}</span>`:''}
       </div>
+      ${projProgressHtml(proj)}
       <div class="pbh-acts">
         <button class="btn btn-secondary" style="font-size:11px;padding:4px 9px;" onclick="pinAll('${cat.id}','${proj.id}',true)" title="Alles pinnen">📌+</button>
         <button class="btn btn-secondary" style="font-size:11px;padding:4px 9px;" onclick="pinAll('${cat.id}','${proj.id}',false)" title="Alles losmaken">📌−</button>
@@ -894,6 +941,7 @@ function toggleProjCollapse(projId) {
   if (!st.collapsedProjs.has(projId)) attachDrag(proj);
   requestAnimationFrame(() => {
     drawCrossProjectArrows(cat);
+    if (!st.collapsedProjs.has(projId)) drawWithinProjectArrows(proj);
   });
 }
 
@@ -1026,6 +1074,126 @@ function drawCrossProjectArrows(cat) {
   container.onscroll = () => drawCrossProjectArrows(cat);
   document.querySelectorAll('.proj-tl-area').forEach(el => el.onscroll = () => drawCrossProjectArrows(cat));
 }
+
+// ═══════════════════════════════════════════════════════
+// WITHIN-PROJECT ARCS (#12)
+// ═══════════════════════════════════════════════════════
+function projProgressHtml(proj) {
+  const all = proj.tasks.filter(t => !t.subtasks?.length || !t.isExpanded);
+  const allCount = proj.tasks.length;
+  if (!allCount) return '';
+  const doneCount = proj.tasks.filter(t => t.status === 'klaar').length;
+  const pct = Math.round(doneCount / allCount * 100);
+  return `<div class="pbh-progress" title="${doneCount}/${allCount} afgerond">
+    <div class="pbh-prog-bar"><div class="pbh-prog-fill" style="width:${pct}%"></div></div>
+    <span class="pbh-prog-pct">${pct}%</span>
+  </div>`;
+}
+
+function drawWithinProjectArrows(proj) {
+  const areaEl = document.getElementById('pta-' + proj.id);
+  if (!areaEl) return;
+  const ex = document.getElementById('wpa-' + proj.id);
+  if (ex) ex.remove();
+
+  const projTaskIds = new Set(proj.tasks.map(t => t.id));
+  const deps = [];
+  proj.tasks.forEach(task => {
+    (task.requiredTasks||[]).forEach(rid => {
+      if (projTaskIds.has(rid) && task.status !== 'klaar') deps.push({fromId:rid, toId:task.id});
+    });
+  });
+  if (!deps.length) return;
+
+  const ar = areaEl.getBoundingClientRect();
+  const sx = areaEl.scrollLeft;
+  const lines = [];
+
+  for (const {fromId, toId} of deps) {
+    const fromEl = areaEl.querySelector(`[data-tid="${fromId}"]`);
+    const toEl   = areaEl.querySelector(`[data-tid="${toId}"]`);
+    if (!fromEl || !toEl) continue;
+    const fr = fromEl.getBoundingClientRect();
+    const tr = toEl.getBoundingClientRect();
+    const x1 = fr.right  - ar.left + sx;
+    const y1 = fr.top + fr.height * 0.4 - ar.top;
+    const x2 = tr.left   - ar.left + sx;
+    const y2 = tr.top + tr.height * 0.4 - ar.top;
+    const dx = Math.abs(x2 - x1);
+    const archH = Math.max(24, dx * 0.22);
+    const arcY  = Math.min(y1, y2) - archH;
+    const cx1 = x1 + Math.min(55, dx * 0.4);
+    const cx2 = x2 - Math.min(55, dx * 0.4);
+    const fromTask = proj.tasks.find(t => t.id === fromId);
+    const color = fromTask?.status === 'klaar' ? '#27ae60' : '#3498db';
+    lines.push(`<path class="wpa-arc"
+      d="M${x1.toFixed(1)},${y1.toFixed(1)} C${cx1.toFixed(1)},${arcY.toFixed(1)} ${cx2.toFixed(1)},${arcY.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}"
+      stroke="${color}" stroke-width="2" fill="none" opacity="0.55"
+      style="pointer-events:stroke;cursor:pointer"
+      marker-end="url(#wpa-arr-${proj.id})"
+      onclick="removeWithinDep('${proj.id}','${fromId}','${toId}')"
+      onmouseenter="this.setAttribute('stroke-width','3');this.setAttribute('opacity','0.9')"
+      onmouseleave="this.setAttribute('stroke-width','2');this.setAttribute('opacity','0.55')"/>`);
+  }
+  if (!lines.length) return;
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.id = 'wpa-' + proj.id;
+  svg.style.cssText = `position:absolute;top:0;left:0;width:${areaEl.scrollWidth}px;height:${Math.max(areaEl.scrollHeight,80)}px;pointer-events:none;z-index:1;overflow:visible;`;
+  svg.innerHTML = `<defs><marker id="wpa-arr-${proj.id}" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0,7 2.5,0 5" fill="#3498db" opacity="0.7"/></marker></defs>${lines.join('')}`;
+  areaEl.appendChild(svg);
+  areaEl.onscroll = () => drawWithinProjectArrows(proj);
+}
+
+function removeWithinDep(projId, fromId, toId) {
+  const r = findProjById(projId); if (!r) return;
+  const toTask = findInProj(r.proj, toId); if (!toTask) return;
+  if (!confirm('Verbinding verwijderen?')) return;
+  pushUndo();
+  toTask.requiredTasks = (toTask.requiredTasks||[]).filter(id => id !== fromId);
+  save(); renderMain();
+}
+
+// ═══════════════════════════════════════════════════════
+// ZOEKFUNCTIE
+// ═══════════════════════════════════════════════════════
+function onSearch(q) {
+  const box = document.getElementById('search-results');
+  if (!box) return;
+  q = q.trim().toLowerCase();
+  if (!q) { box.style.display='none'; box.innerHTML=''; return; }
+  const hits = [];
+  for (const c of db.categories)
+    for (const p of c.projects) {
+      for (const t of p.tasks) {
+        if (t.title.toLowerCase().includes(q) || (t.description||'').toLowerCase().includes(q))
+          hits.push({t, p, c, sub:false});
+        for (const s of (t.subtasks||[]))
+          if (s.title.toLowerCase().includes(q))
+            hits.push({t:s, p, c, sub:true, parentTitle:t.title});
+      }
+    }
+  if (!hits.length) {
+    box.innerHTML='<div class="sr-item"><span class="sr-title" style="color:rgba(255,255,255,.4)">Geen resultaten</span></div>';
+    box.style.display='block'; return;
+  }
+  box.innerHTML = hits.slice(0,12).map(({t,p,c,sub,parentTitle}) =>
+    `<div class="sr-item" onclick="selProj('${c.id}','${p.id}');closeSearch()">
+      <div class="sr-title">${sub?`↳ `:''}${esc(t.title)}</div>
+      <div class="sr-proj">${esc(c.name)} / ${esc(p.name)}${sub&&parentTitle?` › ${esc(parentTitle)}`:''}</div>
+    </div>`
+  ).join('');
+  box.style.display='block';
+}
+function closeSearch() {
+  const box = document.getElementById('search-results');
+  const inp = document.getElementById('sb-search-inp');
+  if (box) { box.style.display='none'; box.innerHTML=''; }
+  if (inp) inp.value = '';
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.sb-search')) closeSearch();
+});
 
 // ═══════════════════════════════════════════════════════
 // DRAG & DROP (main tasks + subtasks) (#8)
@@ -1874,6 +2042,81 @@ function closeModal() {
   const r = document.getElementById('modal-root');
   delete r.dataset.strict;
   r.innerHTML = '';
+}
+
+// ═══════════════════════════════════════════════════════
+// DRAG-CONNECT (#13)
+// ═══════════════════════════════════════════════════════
+let connDrag = null;
+
+function startConnDrag(e, fromId, projId) {
+  e.stopPropagation();
+  e.preventDefault();
+  const fromEl = document.querySelector(`[data-tid="${fromId}"]`);
+  if (!fromEl) return;
+  const fr = fromEl.getBoundingClientRect();
+  const startX = fr.right - 3;
+  const startY = fr.top + fr.height / 2;
+
+  const overlay = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  overlay.id = 'conn-drag-svg';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:999;';
+  overlay.innerHTML = `<defs>
+    <marker id="cd-arr" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+      <polygon points="0 0,7 2.5,0 5" fill="#3498db"/>
+    </marker>
+  </defs>
+  <line id="cd-line" x1="${startX}" y1="${startY}" x2="${startX}" y2="${startY}"
+    stroke="#3498db" stroke-width="2" stroke-dasharray="7 4" marker-end="url(#cd-arr)"/>`;
+  document.body.appendChild(overlay);
+
+  connDrag = {fromId, projId};
+  document.addEventListener('mousemove', onConnDragMove);
+  document.addEventListener('mouseup', onConnDragEnd);
+}
+
+function onConnDragMove(e) {
+  if (!connDrag) return;
+  const line = document.getElementById('cd-line');
+  if (line) { line.setAttribute('x2', e.clientX); line.setAttribute('y2', e.clientY); }
+  document.querySelectorAll('.card.conn-target').forEach(c => c.classList.remove('conn-target'));
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const card = el?.closest('.card');
+  if (card?.dataset?.tid && card.dataset.tid !== connDrag.fromId) {
+    card.classList.add('conn-target');
+  }
+}
+
+function onConnDragEnd(e) {
+  if (!connDrag) return;
+  document.removeEventListener('mousemove', onConnDragMove);
+  document.removeEventListener('mouseup', onConnDragEnd);
+  const svg = document.getElementById('conn-drag-svg');
+  if (svg) svg.remove();
+  document.querySelectorAll('.card.conn-target').forEach(c => c.classList.remove('conn-target'));
+
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const targetCard = el?.closest('.card');
+  const toId = targetCard?.dataset?.tid;
+
+  if (toId && toId !== connDrag.fromId) {
+    const r = findProjById(connDrag.projId);
+    if (r) {
+      const toTask = findInProj(r.proj, toId);
+      if (toTask) {
+        if ((toTask.requiredTasks||[]).includes(connDrag.fromId)) {
+          toast('Verbinding bestaat al');
+        } else {
+          pushUndo();
+          if (!toTask.requiredTasks) toTask.requiredTasks = [];
+          toTask.requiredTasks.push(connDrag.fromId);
+          save(); renderMain();
+          toast('Verbinding aangemaakt — klik op de boog om te verwijderen');
+        }
+      }
+    }
+  }
+  connDrag = null;
 }
 
 // ═══════════════════════════════════════════════════════

@@ -984,10 +984,7 @@ function toggleProjCollapse(projId) {
   tmp.innerHTML = renderProjectBlock(cat, proj);
   block.replaceWith(tmp.firstElementChild);
   if (!st.collapsedProjs.has(projId)) attachDrag(proj);
-  requestAnimationFrame(() => {
-    drawCrossProjectArrows(cat);
-    if (!st.collapsedProjs.has(projId)) drawWithinProjectArrows(proj);
-  });
+  requestAnimationFrame(() => { drawCrossProjectArrows(cat); });
 }
 
 function getCrossProjectDeps(cat) {
@@ -1118,80 +1115,6 @@ function drawCrossProjectArrows(cat) {
 
   container.onscroll = () => drawCrossProjectArrows(cat);
   document.querySelectorAll('.proj-tl-area').forEach(el => el.onscroll = () => drawCrossProjectArrows(cat));
-}
-
-// ═══════════════════════════════════════════════════════
-// WITHIN-PROJECT ARCS (#12)
-// ═══════════════════════════════════════════════════════
-function drawWithinProjectArrows(proj) {
-  const areaEl = document.getElementById('pta-' + proj.id);
-  if (!areaEl) return;
-  const ex = document.getElementById('wpa-' + proj.id);
-  if (ex) ex.remove();
-
-  const projTaskIds = new Set(proj.tasks.map(t => t.id));
-  const deps = [];
-  proj.tasks.forEach(task => {
-    (task.requiredTasks||[]).forEach(rid => {
-      if (projTaskIds.has(rid)) {
-        // Alleen tekenen als de vereiste taak nog NIET klaar is
-        const reqTask = proj.tasks.find(t => t.id === rid);
-        if (reqTask && reqTask.status !== 'klaar') {
-          deps.push({fromId:rid, toId:task.id});
-        }
-      }
-    });
-  });
-  if (!deps.length) return;
-
-  const ar = areaEl.getBoundingClientRect();
-  const scrollLeft = areaEl.scrollLeft;
-  const lines = [];
-
-  for (const {fromId, toId} of deps) {
-    const fromEl = areaEl.querySelector(`[data-tid="${fromId}"]`);
-    const toEl   = areaEl.querySelector(`[data-tid="${toId}"]`);
-    if (!fromEl || !toEl) continue;
-    const fr = fromEl.getBoundingClientRect();
-    const tr = toEl.getBoundingClientRect();
-
-    // Startpunt: bovenkant van bronkaartje, horizontaal gecentreerd
-    const x1 = fr.left + fr.width / 2 - ar.left + scrollLeft;
-    const y1 = fr.top - ar.top;
-    // Eindpunt: bovenkant van doelkaartje, horizontaal gecentreerd
-    const x2 = tr.left + tr.width / 2 - ar.left + scrollLeft;
-    const y2 = tr.top - ar.top;
-
-    // Boogpiek: minimaal 40px boven het hoogste van de twee startpunten
-    const peakY = Math.min(y1, y2) - Math.max(40, Math.abs(x2 - x1) * 0.12);
-
-    // Cubic bezier: M x1,y1 C x1,peakY x2,peakY x2,y2
-    lines.push(`<path class="wpa-arc"
-      d="M${x1.toFixed(1)},${y1.toFixed(1)} C${x1.toFixed(1)},${peakY.toFixed(1)} ${x2.toFixed(1)},${peakY.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}"
-      stroke="#3498db" stroke-width="2" fill="none" opacity="0.55"
-      style="pointer-events:stroke;cursor:pointer"
-      marker-end="url(#wpa-arr-${proj.id})"
-      onclick="removeWithinDep('${proj.id}','${fromId}','${toId}')"
-      onmouseenter="this.setAttribute('stroke-width','3');this.setAttribute('opacity','0.9')"
-      onmouseleave="this.setAttribute('stroke-width','2');this.setAttribute('opacity','0.55')"/>`);
-  }
-  if (!lines.length) return;
-
-  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-  svg.id = 'wpa-' + proj.id;
-  svg.style.cssText = `position:absolute;top:0;left:0;width:${areaEl.scrollWidth}px;height:${Math.max(areaEl.scrollHeight,80)}px;pointer-events:none;z-index:1;overflow:visible;`;
-  svg.innerHTML = `<defs><marker id="wpa-arr-${proj.id}" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0,7 2.5,0 5" fill="#3498db" opacity="0.7"/></marker></defs>${lines.join('')}`;
-  areaEl.appendChild(svg);
-  areaEl.onscroll = () => drawWithinProjectArrows(proj);
-}
-
-function removeWithinDep(projId, fromId, toId) {
-  const r = findProjById(projId); if (!r) return;
-  const toTask = findInProj(r.proj, toId); if (!toTask) return;
-  if (!confirm('Verbinding verwijderen?')) return;
-  pushUndo();
-  toTask.requiredTasks = (toTask.requiredTasks||[]).filter(id => id !== fromId);
-  save(); renderMain();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2091,11 +2014,19 @@ function onConnDragEnd(e) {
   const toSide = dotEl ? dotEl.dataset.side : null;
 
   if (toId && toId !== connDrag.fromId) {
-    const r = findProjById(connDrag.projId);
-    if (r) {
-      const fromTask = findInProj(r.proj, connDrag.fromId);
-      const toTask = findInProj(r.proj, toId);
-      if (toTask && fromTask) {
+    const fromR = findProjById(connDrag.projId);
+    // Zoek toTask en toProj in alle projecten
+    let toTask = null, toProj = null;
+    for (const c of db.categories) {
+      for (const p of c.projects) {
+        const t = findInProj(p, toId);
+        if (t) { toTask = t; toProj = p; break; }
+      }
+      if (toTask) break;
+    }
+    if (fromR && toTask) {
+      const fromTask = findInProj(fromR.proj, connDrag.fromId);
+      if (fromTask) {
         if ((toTask.requiredTasks||[]).includes(connDrag.fromId)) {
           toast('Verbinding bestaat al');
         } else {
@@ -2105,31 +2036,30 @@ function onConnDragEnd(e) {
           fromTask.depPinned = true;
           toTask.depPinned = true;
 
-          // Auto-reorder op basis van de side van het eindpunt (toSide)
-          const fromSide = connDrag.fromSide;
-          const tasks = r.proj.tasks;
-          if (toSide === 'tr' || toSide === 'br') {
-            // Via rechter port: source krijgt position = toTask.position + 1
-            const targetPos = toTask.position;
-            tasks.forEach(t => {
-              if (!t.pinned && !t.depPinned && t.id !== connDrag.fromId && t.position > targetPos) {
-                t.position += 1;
-              }
-            });
-            fromTask.position = targetPos + 1;
-          } else if (toSide === 'tl' || toSide === 'bl') {
-            // Via linker port: source krijgt position = toTask.position
-            const targetPos = toTask.position;
-            tasks.forEach(t => {
-              if (!t.pinned && !t.depPinned && t.id !== connDrag.fromId && t.position >= targetPos) {
-                t.position += 1;
-              }
-            });
-            fromTask.position = targetPos;
+          // Auto-reorder alleen binnen hetzelfde project
+          if (toProj.id === fromR.proj.id) {
+            const tasks = fromR.proj.tasks;
+            if (toSide === 'tr' || toSide === 'br') {
+              const targetPos = toTask.position;
+              tasks.forEach(t => {
+                if (!t.pinned && !t.depPinned && t.id !== connDrag.fromId && t.position > targetPos) {
+                  t.position += 1;
+                }
+              });
+              fromTask.position = targetPos + 1;
+            } else if (toSide === 'tl' || toSide === 'bl') {
+              const targetPos = toTask.position;
+              tasks.forEach(t => {
+                if (!t.pinned && !t.depPinned && t.id !== connDrag.fromId && t.position >= targetPos) {
+                  t.position += 1;
+                }
+              });
+              fromTask.position = targetPos;
+            }
           }
 
           save(); renderMain();
-          toast('Verbinding aangemaakt — klik op de boog om te verwijderen');
+          toast('Verbinding aangemaakt');
         }
       }
     }

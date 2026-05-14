@@ -270,13 +270,13 @@ textarea.fc{resize:vertical;min-height:72px;}
 /* CATEGORIE-VIEW — projecten verticaal gestapeld */
 .cat-projects{flex:1;overflow-y:auto;overflow-x:hidden;padding:16px 24px;display:flex;flex-direction:column;gap:14px;position:relative;}
 .proj-block{background:var(--card);border-radius:12px;box-shadow:var(--shadow);border:1px solid var(--border);}
-.proj-block-head{display:flex;align-items:center;gap:10px;padding:7px 12px;background:#fafbfc;border-bottom:1px solid var(--border);border-radius:12px 12px 0 0;}
+.proj-block-head{display:flex;align-items:center;gap:10px;padding:7px 12px;background:transparent;border-bottom:1px solid var(--border);border-radius:12px 12px 0 0;}
 .proj-block.is-collapsed .proj-block-head{border-bottom:none;border-radius:12px;}
 .pbh-toggle{cursor:pointer;color:var(--muted);font-size:11px;width:20px;flex-shrink:0;user-select:none;padding:2px 4px;border-radius:3px;line-height:1;text-align:center;}
 .pbh-toggle:hover{color:var(--text);background:#e4e8ed;}
 .pbh-info{flex:1;min-width:0;display:flex;align-items:baseline;gap:0;overflow:hidden;}
-.pbh-name{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;flex-shrink:0;}
-.pbh-desc{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+.pbh-name{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;flex-shrink:0;background:#fafbfc;padding:0 3px;border-radius:2px;}
+.pbh-desc{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;background:#fafbfc;padding:0 3px;border-radius:2px;}
 .pbh-acts{display:flex;gap:5px;flex-shrink:0;align-items:center;flex-wrap:wrap;}
 .proj-block-body{display:flex;flex-direction:column;}
 .proj-tl-area{overflow-x:auto;padding:16px 24px 16px;}
@@ -784,7 +784,7 @@ function cardHtml(task, proj, parentTask) {
       .filter(id => !findInProj(proj, id))
       .map(id => {
         const t = findTaskAnywhere(id);
-        return t ? `↕ ${esc(t.title)}` : null;
+        return t ? `↕️ ${esc(t.title)}` : null;
       }).filter(Boolean);
     const allLabels = [...ownLabels, ...crossLabels];
     blockedOver = `<div class="blocked-over">
@@ -1100,13 +1100,19 @@ function drawWithinProjectArrows(proj) {
   const deps = [];
   proj.tasks.forEach(task => {
     (task.requiredTasks||[]).forEach(rid => {
-      if (projTaskIds.has(rid) && task.status !== 'klaar') deps.push({fromId:rid, toId:task.id});
+      if (projTaskIds.has(rid)) {
+        // Alleen tekenen als de vereiste taak nog NIET klaar is
+        const reqTask = proj.tasks.find(t => t.id === rid);
+        if (reqTask && reqTask.status !== 'klaar') {
+          deps.push({fromId:rid, toId:task.id});
+        }
+      }
     });
   });
   if (!deps.length) return;
 
   const ar = areaEl.getBoundingClientRect();
-  const sx = areaEl.scrollLeft;
+  const scrollLeft = areaEl.scrollLeft;
   const lines = [];
 
   for (const {fromId, toId} of deps) {
@@ -1115,20 +1121,21 @@ function drawWithinProjectArrows(proj) {
     if (!fromEl || !toEl) continue;
     const fr = fromEl.getBoundingClientRect();
     const tr = toEl.getBoundingClientRect();
-    const x1 = fr.right  - ar.left + sx;
-    const y1 = fr.top + fr.height * 0.4 - ar.top;
-    const x2 = tr.left   - ar.left + sx;
-    const y2 = tr.top + tr.height * 0.4 - ar.top;
-    const dx = Math.abs(x2 - x1);
-    const archH = Math.max(24, dx * 0.22);
-    const arcY  = Math.min(y1, y2) - archH;
-    const cx1 = x1 + Math.min(55, dx * 0.4);
-    const cx2 = x2 - Math.min(55, dx * 0.4);
-    const fromTask = proj.tasks.find(t => t.id === fromId);
-    const color = fromTask?.status === 'klaar' ? '#27ae60' : '#3498db';
+
+    // Startpunt: bovenkant van bronkaartje, horizontaal gecentreerd
+    const x1 = fr.left + fr.width / 2 - ar.left + scrollLeft;
+    const y1 = fr.top - ar.top;
+    // Eindpunt: bovenkant van doelkaartje, horizontaal gecentreerd
+    const x2 = tr.left + tr.width / 2 - ar.left + scrollLeft;
+    const y2 = tr.top - ar.top;
+
+    // Boogpiek: minimaal 40px boven het hoogste van de twee startpunten
+    const peakY = Math.min(y1, y2) - Math.max(40, Math.abs(x2 - x1) * 0.12);
+
+    // Cubic bezier: M x1,y1 C x1,peakY x2,peakY x2,y2
     lines.push(`<path class="wpa-arc"
-      d="M${x1.toFixed(1)},${y1.toFixed(1)} C${cx1.toFixed(1)},${arcY.toFixed(1)} ${cx2.toFixed(1)},${arcY.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}"
-      stroke="${color}" stroke-width="2" fill="none" opacity="0.55"
+      d="M${x1.toFixed(1)},${y1.toFixed(1)} C${x1.toFixed(1)},${peakY.toFixed(1)} ${x2.toFixed(1)},${peakY.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}"
+      stroke="#3498db" stroke-width="2" fill="none" opacity="0.55"
       style="pointer-events:stroke;cursor:pointer"
       marker-end="url(#wpa-arr-${proj.id})"
       onclick="removeWithinDep('${proj.id}','${fromId}','${toId}')"

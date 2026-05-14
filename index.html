@@ -431,6 +431,10 @@ const MAX_UNDO = 10;
 
 function load() {
   try { const r = localStorage.getItem(KEY); if (r) db = JSON.parse(r); } catch(e) {}
+  // Backward compat: archived veld op categorieën
+  for (const c of (db.categories||[])) {
+    if (c.archived === undefined) c.archived = false;
+  }
 }
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(db)); } catch(e) {}
@@ -519,7 +523,8 @@ const st = {
   openCats: new Set(),
   pinnedOpen: new Set(),
   pinnedExpanded: new Set(),
-  collapsedProjs: new Set()
+  collapsedProjs: new Set(),
+  archiveOpen: false
 };
 
 // ═══════════════════════════════════════════════════════
@@ -529,7 +534,10 @@ function render() { renderSidebar(); renderMain(); }
 
 function renderSidebar() {
   document.getElementById('dl-nav').classList.toggle('active', st.view === 'deadlines');
-  document.getElementById('sb-nav').innerHTML = db.categories.map(c => {
+  const activeCats = db.categories.filter(c => !c.archived);
+  const archivedCats = db.categories.filter(c => c.archived);
+
+  const activeCatsHtml = activeCats.map(c => {
     const active = st.catId === c.id && st.view === 'project';
     const tn = (c.templates||[]).length;
     const np = c.projects.length;
@@ -541,11 +549,33 @@ function renderSidebar() {
           <button class="ic-btn" onclick="event.stopPropagation();manageTemplates('${c.id}')" title="Sjablonen (${tn})">📄${tn?`<b style="font-size:9px">${tn}</b>`:''}</button>
           <button class="ic-btn" onclick="event.stopPropagation();addProject('${c.id}')" title="Nieuw project">+</button>
           <button class="ic-btn" onclick="event.stopPropagation();renameCategory('${c.id}')" title="Hernoem">✏</button>
+          <button class="ic-btn" onclick="event.stopPropagation();archiveCategory('${c.id}')" title="Archiveren">📦</button>
           <button class="ic-btn" onclick="event.stopPropagation();deleteCategory('${c.id}')" title="Verwijder">✕</button>
         </span>
       </div>
     </div>`;
   }).join('');
+
+  let archiveHtml = '';
+  if (archivedCats.length) {
+    const archivedItems = st.archiveOpen ? archivedCats.map(c => `
+      <div class="cat-wrap">
+        <div class="cat-row" style="padding-left:20px;opacity:.7;">
+          <span class="cat-name" style="font-size:11px;">${esc(c.name)}</span>
+          <span class="cat-acts" style="display:flex;">
+            <button class="ic-btn" onclick="event.stopPropagation();unarchiveCategory('${c.id}')" title="Terugzetten">↩</button>
+          </span>
+        </div>
+      </div>`).join('') : '';
+    archiveHtml = `
+      <div style="padding:6px 10px 2px 14px;cursor:pointer;display:flex;align-items:center;gap:6px;color:rgba(255,255,255,.4);font-size:11px;" onclick="st.archiveOpen=!st.archiveOpen;renderSidebar()">
+        <span style="font-size:9px;transition:transform .2s;display:inline-block;${st.archiveOpen?'transform:rotate(90deg)':''}">▶</span>
+        📦 Archief (${archivedCats.length})
+      </div>
+      ${archivedItems}`;
+  }
+
+  document.getElementById('sb-nav').innerHTML = activeCatsHtml + archiveHtml;
 }
 
 function renderMain() {
@@ -1302,7 +1332,7 @@ function showView(v) { st.view=v; renderSidebar(); renderMain(); }
 function addCategory() {
   const n = prompt('Naam van de nieuwe categorie:'); if (!n?.trim()) return;
   pushUndo();
-  const c = {id:uid(),name:n.trim(),projects:[],templates:[]};
+  const c = {id:uid(),name:n.trim(),projects:[],templates:[],archived:false};
   db.categories.push(c); st.openCats.add(c.id); save(); render();
 }
 function renameCategory(id) {
@@ -1316,6 +1346,19 @@ function deleteCategory(id) {
   pushUndo();
   db.categories = db.categories.filter(x => x.id!==id);
   if (st.catId===id) { st.catId=null; st.projId=null; }
+  save(); render();
+}
+function archiveCategory(id) {
+  const c = getCat(id); if (!c) return;
+  pushUndo();
+  c.archived = true;
+  if (st.catId===id) { st.catId=null; st.projId=null; }
+  save(); render();
+}
+function unarchiveCategory(id) {
+  const c = getCat(id); if (!c) return;
+  pushUndo();
+  c.archived = false;
   save(); render();
 }
 

@@ -87,12 +87,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tl{display:flex;align-items:flex-start;min-height:0;gap:10px;width:fit-content;}
 .tl-empty{display:flex;align-items:center;justify-content:center;height:260px;color:var(--muted);font-size:14px;flex:1;}
 
-/* CARD WRAPPER (voor subtakenrij) (#8) */
+/* CARD WRAPPER */
 .card-wrapper{display:flex;flex-direction:column;flex-shrink:0;}
-.subtask-row{margin-top:6px;padding:8px 10px;background:rgba(0,0,0,.035);border-radius:8px;display:flex;align-items:flex-start;gap:0;}
-.tl-sub{display:flex;align-items:flex-start;gap:10px;}
-.subtask-toggle{display:flex;align-items:center;gap:5px;padding:5px 14px 8px;font-size:11px;color:var(--muted);cursor:pointer;border-top:1px solid var(--border);transition:color .15s;user-select:none;}
-.subtask-toggle:hover{color:var(--text);}
 
 /* CARDS (#3 deadline dot, #4 narrower, #5 wacht→blauw) */
 .card{border-radius:var(--radius);box-shadow:var(--shadow);background:var(--card);border:2px solid transparent;transition:box-shadow .2s;position:relative;flex-shrink:0;z-index:2;}
@@ -104,10 +100,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .card.c-wacht{width:fit-content;min-width:235px;max-width:300px;border-color:var(--accent);}
 .card.c-geblokkeerd{width:fit-content;min-width:210px;max-width:280px;border-color:#ccc;opacity:.8;}
 .card.c-klaar{width:180px;border-color:#e0e0e0;}
-/* subtaak-variant: wat kleiner */
-.card.sub-card.c-actief,.card.sub-card.c-wacht{min-width:185px;max-width:240px;}
-.card.sub-card.c-klaar{width:150px;}
-.card.sub-card.c-geblokkeerd{min-width:170px;max-width:230px;}
 
 .card-head{padding:11px 14px 8px;border-radius:var(--radius) var(--radius) 0 0;position:relative;z-index:3;isolation:isolate;background-clip:padding-box;}
 .ch-actief{background:linear-gradient(135deg,#e8f8ef,#d4f0e0);}
@@ -729,25 +721,9 @@ function renderTimeline(proj) {
   return html;
 }
 
-// (#8) Card wrapper — haupttaak met uitklapbare subtakenrij
+// Card wrapper
 function cardWrapperHtml(task, proj) {
-  const hasSubs = (task.subtasks||[]).length > 0;
-  const expanded = task.isExpanded && hasSubs;
-  let subRow = '';
-  if (expanded) {
-    const subs = [...task.subtasks].sort((a,b) => a.position - b.position);
-    let subCards = '';
-    subs.forEach(s => {
-      subCards += cardHtml(s, proj, task);
-    });
-    subRow = `<div class="subtask-row">
-      <div class="tl-sub" id="tl-sub-${task.id}">${subCards}</div>
-      <div style="padding-left:10px;align-self:center;">
-        <div class="add-card" style="width:110px;height:56px;font-size:11px;" onclick="st.projId='${proj.id}';openNewSubtask('${task.id}')">+ Subtaak</div>
-      </div>
-    </div>`;
-  }
-  return `<div class="card-wrapper">${cardHtml(task, proj, null)}${subRow}</div>`;
+  return `<div class="card-wrapper">${cardHtml(task, proj)}</div>`;
 }
 
 // Zoek een taak op id in alle projecten van alle categorieën
@@ -773,19 +749,14 @@ function effectiveStatus(task, proj) {
   return task.status;
 }
 
-// parentTask = null for main tasks, task object for subtasks
-function cardHtml(task, proj, parentTask) {
-  const isSub = parentTask !== null;
+function cardHtml(task, proj) {
   const status = effectiveStatus(task, proj);
   const isKlaar = status === 'klaar';
   const isBlocked = status === 'geblokkeerd';
-  const hasSubs = !isSub && (task.subtasks||[]).length > 0;
-  const expanded = hasSubs && task.isExpanded;
-  const subCls = isSub ? ' sub-card' : '';
-  const minPosition = !isSub && proj.tasks.length > 0 ? Math.min(...proj.tasks.map(t => t.position)) : null;
-  const isFirstPos = !isSub && task.position === minPosition && proj.tasks.length > 1;
+  const minPosition = proj.tasks.length > 0 ? Math.min(...proj.tasks.map(t => t.position)) : null;
+  const isFirstPos = task.position === minPosition && proj.tasks.length > 1;
 
-  // (#3) deadline chip — only dot, no border override on card
+  // deadline chip
   let dlChip = '';
   if (task.deadline) {
     const dc = dlClass(task.deadline);
@@ -796,36 +767,31 @@ function cardHtml(task, proj, parentTask) {
   }
 
   const ctx = `st.projId='${proj.id}';`;
-  const pinFn = isSub ? `${ctx}togglePin('${task.id}','${parentTask.id}')` : `${ctx}togglePin('${task.id}',null)`;
-  const isDepPinned = task.depPinned === true;  // vastgepind door pijlverbinding
+  const pinFn = `${ctx}togglePin('${task.id}',null)`;
+  const isDepPinned = task.depPinned === true;
   const pinIcon = isDepPinned ? '🔵' : (isFirstPos && !task.pinned ? '🔒' : '📌');
   const pinTitle = isDepPinned ? 'Vastgezet door verbinding — klik om positie vrij te geven' : (isFirstPos && !task.pinned ? 'Eerste kaart — kan niet versleept worden' : (task.pinned ? 'Losmaken' : 'Vastzetten'));
   const pinBtn = `<button class="pin-btn${(task.pinned||isDepPinned||isFirstPos)?' is-pinned':''}" onclick="event.stopPropagation();${isFirstPos&&!task.pinned&&!isDepPinned?'':pinFn}" title="${pinTitle}">${pinIcon}</button>`;
 
-  const canDrag = !isSub && !task.pinned && !task.depPinned && !isFirstPos;
-  const connDots = !isSub ? `
+  const canDrag = !task.pinned && !task.depPinned && !isFirstPos;
+  const connDots = `
     <div class="conn-dot conn-tl" data-side="tl" onmousedown="startConnDrag(event,'${task.id}','${proj.id}',this)"></div>
     <div class="conn-dot conn-tr" data-side="tr" onmousedown="startConnDrag(event,'${task.id}','${proj.id}',this)"></div>
     <div class="conn-dot conn-bl" data-side="bl" onmousedown="startConnDrag(event,'${task.id}','${proj.id}',this)"></div>
-    <div class="conn-dot conn-br" data-side="br" onmousedown="startConnDrag(event,'${task.id}','${proj.id}',this)"></div>` : '';
+    <div class="conn-dot conn-br" data-side="br" onmousedown="startConnDrag(event,'${task.id}','${proj.id}',this)"></div>`;
 
   if (isKlaar) {
-    const subToggle = hasSubs ? `<div class="subtask-toggle" onclick="toggleExpand('${task.id}','${proj.id}')">
-      ${expanded?'▼':'▶'} ${task.subtasks.length} subtaak${task.subtasks.length!==1?'en':''}
-    </div>` : '';
-    const editFn = isSub ? `${ctx}openEditSubtask('${task.id}','${parentTask.id}')` : `${ctx}openEditTask('${task.id}')`;
-    return `<div class="card c-klaar${subCls}" data-tid="${task.id}" ${isSub?`data-parent="${parentTask.id}"`:''} ${canDrag?'draggable="true"':''}>
+    return `<div class="card c-klaar" data-tid="${task.id}" ${canDrag?'draggable="true"':''}>
       ${pinBtn}
       ${canDrag?'<span class="drag-hdl">⠿</span>':''}
       ${connDots}
-      <div class="card-head ch-klaar">
+      <div class="card-head ch-klaar" ${task.color?`style="background:${task.color}20;"`:''}>
         <span class="badge b-klaar">✓ Afgerond</span>
         <div class="card-title">${esc(task.title)}</div>
       </div>
       ${task.outcome?`<div class="card-outcome">"${esc(task.outcome)}"</div>`:''}
       ${dlChip?`<div style="padding:0 14px 4px">${dlChip}</div>`:''}
-      <div class="card-acts"><button class="ca-btn ca-edit" onclick="${editFn}">Bekijken</button></div>
-      ${subToggle}
+      <div class="card-acts"><button class="ca-btn ca-edit" onclick="${ctx}openEditTask('${task.id}')">Bekijken</button></div>
     </div>`;
   }
 
@@ -860,7 +826,6 @@ function cardHtml(task, proj, parentTask) {
       const t = findInProj(proj, id) || findTaskAnywhere(id);
       return t && t.status !== 'klaar';
     });
-    // Splits in eigen project en cross-project
     const ownLabels = stillBlocked
       .filter(id => findInProj(proj, id))
       .map(id => esc(findInProj(proj, id).title));
@@ -877,19 +842,11 @@ function cardHtml(task, proj, parentTask) {
     </div>`;
   }
 
-  const subToggle = hasSubs ? `<div class="subtask-toggle" onclick="toggleExpand('${task.id}','${proj.id}')">
-    ${expanded?'▼':'▶'} ${task.subtasks.length} subtaak${task.subtasks.length!==1?'en':''}
-  </div>` : '';
-
-  const editFn  = isSub ? `${ctx}openEditSubtask('${task.id}','${parentTask.id}')` : `${ctx}openEditTask('${task.id}')`;
-  const logFn   = isSub ? `${ctx}quickLog('${task.id}','${parentTask.id}')` : `${ctx}quickLog('${task.id}',null)`;
-  const doneFn  = isSub ? `${ctx}completeAny('${task.id}','${parentTask.id}')` : `${ctx}completeAny('${task.id}',null)`;
-
-  return `<div class="card c-${status}${subCls}" data-tid="${task.id}" ${isSub?`data-parent="${parentTask.id}"`:''} ${canDrag?'draggable="true"':''}>
+  return `<div class="card c-${status}" data-tid="${task.id}" ${canDrag?'draggable="true"':''}>
     ${pinBtn}
     ${canDrag?'<span class="drag-hdl">⠿</span>':''}
     ${connDots}
-    <div class="card-head ch-${status}">
+    <div class="card-head ch-${status}" ${task.color?`style="background:${task.color}20;"`:''}>
       <span class="badge b-${status}">${statusLabels[status]||status}</span>
       <div class="card-title">${esc(task.title)}</div>
     </div>
@@ -899,11 +856,10 @@ function cardHtml(task, proj, parentTask) {
       ${blockedOver}
     </div>
     <div class="card-acts">
-      <button class="ca-btn ca-edit" onclick="${editFn}">✏ Bewerken</button>
-      <button class="ca-btn ca-log" onclick="${logFn}">📝 Log</button>
-      ${!isBlocked?`<button class="ca-btn ca-done" onclick="${doneFn}">✓ Afronden</button>`:''}
+      <button class="ca-btn ca-edit" onclick="${ctx}openEditTask('${task.id}')">✏ Bewerken</button>
+      <button class="ca-btn ca-log" onclick="${ctx}quickLog('${task.id}',null)">📝 Log</button>
+      ${!isBlocked?`<button class="ca-btn ca-done" onclick="${ctx}completeAny('${task.id}',null)">✓ Afronden</button>`:''}
     </div>
-    ${subToggle}
   </div>`;
 }
 
@@ -1293,7 +1249,6 @@ document.addEventListener('click', e => {
 let dragId = null, dragParentId = null;
 
 function attachDrag(proj) {
-  // Main-task cards (draggable, only non-pinned)
   document.querySelectorAll(`#tl-${proj.id} > .card-wrapper > .card[draggable="true"]`).forEach(card => {
     const tid = card.dataset.tid;
     const task = getTask(proj, tid);
@@ -1314,44 +1269,6 @@ function attachDrag(proj) {
       }
     });
   });
-
-  // Subtask cards (draggable within same parent)
-  proj.tasks.forEach(task => {
-    if (!task.isExpanded || !task.subtasks?.length) return;
-    const subTl = document.getElementById('tl-sub-'+task.id);
-    if (!subTl) return;
-    subTl.querySelectorAll('.card').forEach(card => {
-      const sid = card.dataset.tid;
-      const pid = card.dataset.parent;
-      card.setAttribute('draggable', 'true');
-      card.addEventListener('dragstart', e => {
-        dragId = sid; dragParentId = pid;
-        card.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move';
-      });
-      card.addEventListener('dragend', () => card.classList.remove('dragging','drag-over'));
-      card.addEventListener('dragover', e => { e.preventDefault(); card.classList.add('drag-over'); });
-      card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
-      card.addEventListener('drop', e => {
-        e.preventDefault(); card.classList.remove('drag-over');
-        if (dragId && dragId !== sid && dragParentId === pid) {
-          pushUndo();
-          const parentT = getTask(proj, pid);
-          if (!parentT) return;
-          const a = parentT.subtasks.find(s => s.id === dragId);
-          const b = parentT.subtasks.find(s => s.id === sid);
-          if (a && b) { [a.position, b.position] = [b.position, a.position]; save(); renderMain(); }
-        }
-      });
-    });
-  });
-}
-
-function toggleExpand(taskId, projId) {
-  const r = findProjById(projId); if (!r) return;
-  const task = getTask(r.proj, taskId); if (!task) return;
-  pushUndo();
-  task.isExpanded = !task.isExpanded;
-  save(); renderMain();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1465,113 +1382,62 @@ function openNewTask() {
     links:[],outlookLink:'',folderPath:'',
     logEntries:[],outcome:'',status:'actief',
     position:maxPos+1,successors:[],requiredTasks:[],chosenSuccessorId:null,
-    subtasks:[],isExpanded:false,templateId:null,templateOverrides:{},pinned:false
+    subtasks:[],isExpanded:false,templateId:null,templateOverrides:{},pinned:false,color:null
   };
-  openTaskModal(task,proj,true,null);
+  openTaskModal(task,proj,true);
 }
 
 function openEditTask(tid) {
   const proj = getProj(st.catId,st.projId); if (!proj) return;
   const task = getTask(proj,tid); if (!task) return;
-  openTaskModal(task,proj,false,null);
+  openTaskModal(task,proj,false);
 }
 
-// (#8) Subtask modals
-function openNewSubtask(parentId) {
-  const proj = getProj(st.catId,st.projId); if (!proj) return;
-  const parent = getTask(proj,parentId); if (!parent) return;
-  if (!parent.subtasks) parent.subtasks = [];
-  const maxPos = parent.subtasks.reduce((m,s) => Math.max(m,s.position),-1);
-  const sub = {
-    id:uid(),title:'',description:'',deadline:null,
-    links:[],outlookLink:'',
-    folderPath: parent.folderPath||'',  // (#7) overerving
-    logEntries:[],outcome:'',status:'actief',
-    position:maxPos+1,successors:[],requiredTasks:[],chosenSuccessorId:null,
-    templateId:null,templateOverrides:{},pinned:false
-  };
-  openTaskModal(sub,proj,true,parent);
-}
-
-function openEditSubtask(subId, parentId) {
-  const proj = getProj(st.catId,st.projId); if (!proj) return;
-  const parent = getTask(proj,parentId); if (!parent) return;
-  const sub = (parent.subtasks||[]).find(s => s.id===subId); if (!sub) return;
-  openTaskModal(sub,proj,false,parent);
-}
-
-function openTaskModal(task, proj, isNew, parentTask) {
-  const isSub = parentTask !== null;
+function openTaskModal(task, proj, isNew) {
   const cat = getCat(st.catId);
   const templates = cat?.templates||[];
 
-  // (#9) Dep-list filtering
-  let reqHtml = '';
-  if (isSub) {
-    const sibs = (parentTask.subtasks||[]).filter(s => s.id !== task.id);
-    reqHtml = sibs.length
-      ? `<div class="dep-list" id="dep-list">${sibs.map(s =>
-          `<label class="dep-item"><input type="checkbox" value="${s.id}" ${(task.requiredTasks||[]).includes(s.id)?'checked':''}> ${esc(s.title)}</label>`
-        ).join('')}</div>`
-      : `<div style="color:var(--muted);font-size:12px;margin-bottom:6px;">Geen andere subtaken in deze hoofdtaak.</div><div id="dep-list"></div>`;
+  // Dep-list filtering (alleen hoofdtaken)
+  const others = proj.tasks.filter(t => t.id !== task.id);
+  let reqHtml = others.length
+    ? `<div class="dep-list" id="dep-list">${others.map(t =>
+        `<label class="dep-item"><input type="checkbox" value="${t.id}" ${(task.requiredTasks||[]).includes(t.id)?'checked':''}> ${esc(t.title)}</label>`
+      ).join('')}</div>`
+    : `<div style="color:var(--muted);font-size:12px;">Geen andere taken beschikbaar.</div><div id="dep-list"></div>`;
 
-    // Cross-parent picker
-    const otherParents = proj.tasks.filter(t => t.id !== parentTask.id && (t.subtasks||[]).length);
-    reqHtml += `<div class="fg" style="margin-top:8px;">
-      <label>Afhankelijkheid van andere hoofdtaak:</label>
-      <select class="fc" id="cross-parent-sel" onchange="loadCrossParentOpts(this,'${parentTask.id}','${proj.id}')">
-        <option value="">— Selecteer hoofdtaak —</option>
-        ${otherParents.map(t=>`<option value="${t.id}">${esc(t.title)}</option>`).join('')}
-      </select>
-      <div id="cross-parent-opts" style="margin-top:6px;"></div>
-    </div>`;
-  } else {
-    const others = proj.tasks.filter(t => t.id !== task.id);
-    reqHtml = others.length
-      ? `<div class="dep-list" id="dep-list">${others.map(t =>
-          `<label class="dep-item"><input type="checkbox" value="${t.id}" ${(task.requiredTasks||[]).includes(t.id)?'checked':''}> ${esc(t.title)}</label>`
-        ).join('')}</div>`
-      : `<div style="color:var(--muted);font-size:12px;">Geen andere taken beschikbaar.</div><div id="dep-list"></div>`;
-
-    // Cross-project picker (binnen dezelfde categorie)
-    const otherProjects = cat ? cat.projects.filter(p => p.id !== proj.id) : [];
-    if (otherProjects.length) {
-      // Bestaande cross-project afhankelijkheden detecteren en tonen
-      const crossProjDeps = (task.requiredTasks||[]).filter(id =>
-        (cat?.projects||[]).some(p => p.id !== proj.id && findInProj(p, id))
-      );
-      let existingCrossHtml = '';
-      if (crossProjDeps.length) {
-        existingCrossHtml = `<div class="dep-list" id="cross-proj-current" style="margin-bottom:6px;">` +
-          crossProjDeps.map(id => {
-            let taskTitle = '?', projName = '?';
-            for (const p of (cat?.projects||[])) {
-              const t = findInProj(p, id);
-              if (t) { taskTitle = t.title; projName = p.name; break; }
-            }
-            return `<label class="dep-item"><input type="checkbox" class="cross-dep" value="${id}" checked>` +
-              `<span style="color:var(--muted);font-size:10px;">${esc(projName)} ›</span> ${esc(taskTitle)}</label>`;
-          }).join('') +
-        `</div>`;
-      }
-      reqHtml += `<div class="fg" style="margin-top:8px;">
-        <label>Kies uit ander project:</label>
-        ${existingCrossHtml}
-        <select class="fc" id="cross-proj-sel" onchange="loadCrossProjOpts(this,'${task.id}')">
-          <option value="">— Selecteer project —</option>
-          ${otherProjects.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}
-        </select>
-        <div id="cross-proj-opts" style="margin-top:6px;"></div>
-      </div>`;
+  // Cross-project picker (binnen dezelfde categorie)
+  const otherProjects = cat ? cat.projects.filter(p => p.id !== proj.id) : [];
+  if (otherProjects.length) {
+    const crossProjDeps = (task.requiredTasks||[]).filter(id =>
+      (cat?.projects||[]).some(p => p.id !== proj.id && findInProj(p, id))
+    );
+    let existingCrossHtml = '';
+    if (crossProjDeps.length) {
+      existingCrossHtml = `<div class="dep-list" id="cross-proj-current" style="margin-bottom:6px;">` +
+        crossProjDeps.map(id => {
+          let taskTitle = '?', projName = '?';
+          for (const p of (cat?.projects||[])) {
+            const t = findInProj(p, id);
+            if (t) { taskTitle = t.title; projName = p.name; break; }
+          }
+          return `<label class="dep-item"><input type="checkbox" class="cross-dep" value="${id}" checked>` +
+            `<span style="color:var(--muted);font-size:10px;">${esc(projName)} ›</span> ${esc(taskTitle)}</label>`;
+        }).join('') +
+      `</div>`;
     }
+    reqHtml += `<div class="fg" style="margin-top:8px;">
+      <label>Kies uit ander project:</label>
+      ${existingCrossHtml}
+      <select class="fc" id="cross-proj-sel" onchange="loadCrossProjOpts(this,'${task.id}')">
+        <option value="">— Selecteer project —</option>
+        ${otherProjects.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}
+      </select>
+      <div id="cross-proj-opts" style="margin-top:6px;"></div>
+    </div>`;
   }
 
-  const allTasksForSucc = isSub
-    ? (parentTask.subtasks||[]).filter(s => s.id !== task.id)
-    : proj.tasks.filter(t => t.id !== task.id);
-
   const taskOptHtml = `<option value="">— kies taak —</option>` +
-    allTasksForSucc.map(t=>`<option value="${t.id}">${esc(t.title)}</option>`).join('');
+    proj.tasks.filter(t => t.id !== task.id).map(t=>`<option value="${t.id}">${esc(t.title)}</option>`).join('');
 
   const succHtml = (task.successors||[]).map((s,i) =>
     `<div class="succ-row" data-sid="${s.id}">
@@ -1601,7 +1467,7 @@ function openTaskModal(task, proj, isNew, parentTask) {
       ${fmtToolbar('new-log')}
       <div class="log-input-row">
         <input class="fc" id="new-log" type="text" placeholder="Nieuwe logregel…" style="flex:1;" onkeydown="fmtKey(event,this)">
-        <button class="btn btn-secondary" onclick="addLogInModal('${task.id}','${isSub?parentTask.id:''}')">+ Toevoegen</button>
+        <button class="btn btn-secondary" onclick="addLogInModal('${task.id}','')">+ Toevoegen</button>
       </div>
     </div>`;
 
@@ -1612,11 +1478,10 @@ function openTaskModal(task, proj, isNew, parentTask) {
 
   const deleteBtn = isNew ? '' : `
     <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border);">
-      <button class="btn btn-danger" onclick="${isSub?`delSubtask('${task.id}','${parentTask.id}')`:` delTask('${task.id}')`}">🗑 Taak verwijderen</button>
+      <button class="btn btn-danger" onclick="delTask('${task.id}')">🗑 Taak verwijderen</button>
     </div>`;
 
-  // (#10) Template selector (only for new tasks, not subtasks)
-  const tmplSel = (!isSub && isNew && templates.length) ? `
+  const tmplSel = (isNew && templates.length) ? `
     <div class="fg"><label>Sjabloon (optioneel)</label>
       <select class="fc" id="t-tmpl" onchange="applyTemplateToForm(this.value)">
         <option value="">— Leeg —</option>
@@ -1624,7 +1489,6 @@ function openTaskModal(task, proj, isNew, parentTask) {
       </select>
     </div>` : '';
 
-  // (#6) Volgorde: Titel, Omschrijving, Deadline+Status, Afhankelijkheden, Opvolgtaken, Links, Outlook, Mappad
   const body = `
     ${tmplSel}
     <div class="fg"><label>Titel *</label><input class="fc" id="t-title" value="${esc(task.title)}" placeholder="Taaknaam…"></div>
@@ -1646,10 +1510,18 @@ function openTaskModal(task, proj, isNew, parentTask) {
     <div class="sec">Opvolgtaken bij afronden</div>
     <div class="fg"><label>Vertakkingen</label>
       <div class="succ-list" id="succ-list">${succHtml}</div>
-      <button class="add-row-btn" onclick="addSuccRow('${proj.id}','${isSub?parentTask.id:''}')">+ Opvolgtaak toevoegen</button>
+      <button class="add-row-btn" onclick="addSuccRow('${proj.id}','')">+ Opvolgtaak toevoegen</button>
     </div>
 
-    <div class="sec">Links &amp; locatie</div>
+    <div class="sec">Kleur &amp; locatie</div>
+    <div class="fg"><label>Kleurmarkering</label>
+      <div id="color-picker" style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;">
+        ${['#e74c3c','#e67e22','#f1c40f','#27ae60','#3498db','#9b59b6'].map(clr => `
+          <div onclick="selectTaskColor('${clr}')" data-color="${clr}" style="width:20px;height:20px;border-radius:50%;background:${clr};cursor:pointer;box-shadow:${(task.color===clr)?'0 0 0 3px #fff,0 0 0 5px '+clr:'none'};transition:box-shadow .1s;"></div>`).join('')}
+        <div onclick="selectTaskColor(null)" data-color="" style="width:20px;height:20px;border-radius:50%;background:#e0e4e8;cursor:pointer;border:1px solid #ccc;box-shadow:${!task.color?'0 0 0 3px #fff,0 0 0 5px #95a5a6':'none'};transition:box-shadow .1s;" title="Standaard"></div>
+      </div>
+      <input type="hidden" id="t-color" value="${esc(task.color||'')}">
+    </div>
     <div class="fg">
       <div class="links-list" id="links-list">${linksHtml}</div>
       <button class="add-row-btn" onclick="addLinkRow()">+ Link toevoegen</button>
@@ -1665,17 +1537,19 @@ function openTaskModal(task, proj, isNew, parentTask) {
 
     ${outcomeSection}${logSection}${deleteBtn}`;
 
-  openModal(isNew ? (isSub?'Nieuwe subtaak':'Nieuwe taak') : (isSub?'Subtaak bewerken':'Taak bewerken'), body, () => {
+  openModal(isNew ? 'Nieuwe taak' : 'Taak bewerken', body, () => {
     const title = document.getElementById('t-title').value.trim();
     if (!title) { alert('Vul een titel in.'); return false; }
 
     pushUndo();
     task.title = title;
     task.description = document.getElementById('t-desc').value.trim();
-    task.deadline = document.getElementById('t-dl').value || null; // (#2)
+    task.deadline = document.getElementById('t-dl').value || null;
     task.status = document.getElementById('t-status').value;
     task.outlookLink = document.getElementById('t-outlook').value.trim();
     task.folderPath = document.getElementById('t-folder').value.trim();
+    const colorEl = document.getElementById('t-color');
+    if (colorEl) task.color = colorEl.value || null;
     if (!isNew && document.getElementById('t-outcome'))
       task.outcome = document.getElementById('t-outcome').value.trim();
 
@@ -1685,7 +1559,6 @@ function openTaskModal(task, proj, isNew, parentTask) {
       url:   row.querySelectorAll('input')[1].value.trim()
     })).filter(l => l.url);
 
-    // required tasks: local deps + cross-parent deps
     const localDeps = Array.from(document.querySelectorAll('#dep-list input:checked')).map(cb => cb.value);
     const crossDeps = Array.from(document.querySelectorAll('.cross-dep:checked')).map(cb => cb.value);
     task.requiredTasks = [...new Set([...localDeps, ...crossDeps])];
@@ -1697,29 +1570,33 @@ function openTaskModal(task, proj, isNew, parentTask) {
       order: i
     })).filter(s => s.taskId);
 
-    // (#10) template overrides detection
     if (task.templateId) {
       const t = (cat?.templates||[]).find(t => t.id===task.templateId);
       if (t) detectTemplateOverrides(task, t);
     }
-
-    // (#10) apply template if newly selected
     const tmplEl = document.getElementById('t-tmpl');
     if (tmplEl && tmplEl.value && !task.templateId) {
       task.templateId = tmplEl.value;
     }
 
-    if (isNew) {
-      if (isSub) {
-        if (!parentTask.subtasks) parentTask.subtasks = [];
-        parentTask.subtasks.push(task);
-        parentTask.isExpanded = true;
-      } else {
-        proj.tasks.push(task);
-      }
-    }
+    if (isNew) proj.tasks.push(task);
 
     save(); renderMain(); return true;
+  });
+}
+
+function selectTaskColor(clr) {
+  const inp = document.getElementById('t-color');
+  if (inp) inp.value = clr||'';
+  document.querySelectorAll('#color-picker div').forEach(dot => {
+    const dc = dot.dataset.color;
+    if (clr && dc === clr) {
+      dot.style.boxShadow = `0 0 0 3px #fff,0 0 0 5px ${clr}`;
+    } else if (!clr && dc === '') {
+      dot.style.boxShadow = '0 0 0 3px #fff,0 0 0 5px #95a5a6';
+    } else {
+      dot.style.boxShadow = 'none';
+    }
   });
 }
 
@@ -1734,10 +1611,9 @@ function addLinkRow() {
   div.querySelector('input').focus();
 }
 
-function addSuccRow(projId, parentId) {
+function addSuccRow(projId) {
   const r = findProjById(projId); if (!r) return;
-  const parent = parentId ? getTask(r.proj, parentId) : null;
-  const pool = parent ? (parent.subtasks||[]) : r.proj.tasks;
+  const pool = r.proj.tasks;
   const list = document.getElementById('succ-list');
   const idx = list.querySelectorAll('.succ-row').length;
   const id = uid();
@@ -1750,26 +1626,6 @@ function addSuccRow(projId, parentId) {
     <button class="rm-btn" onclick="this.closest('.succ-row').remove()">✕</button>`;
   list.appendChild(div);
   div.querySelector('input').focus();
-}
-
-// (#9) Cross-parent dep loader
-function loadCrossParentOpts(sel, currentParentId, projId) {
-  const r = findProjById(projId); if (!r) return;
-  const container = document.getElementById('cross-parent-opts');
-  if (!sel.value) { container.innerHTML=''; return; }
-  const otherParent = getTask(r.proj, sel.value);
-  if (!otherParent?.subtasks?.length) {
-    container.innerHTML='<div style="color:var(--muted);font-size:12px;">Geen subtaken in deze hoofdtaak.</div>';
-    return;
-  }
-  // Get already-checked cross-parent IDs (from requiredTasks that are NOT siblings)
-  const sibIds = new Set((getTask(r.proj, currentParentId)?.subtasks||[]).map(s=>s.id));
-  container.innerHTML=`<div class="dep-list">`+
-    otherParent.subtasks.map(s=>{
-      const checked = document.querySelectorAll(`#dep-list input[value="${s.id}"]:checked`).length > 0;
-      return `<label class="dep-item"><input type="checkbox" class="cross-dep" value="${s.id}" ${checked?'checked':''}> ${esc(s.title)}</label>`;
-    }).join('')+
-  `</div>`;
 }
 
 function loadCrossProjOpts(sel, currentTaskId) {
@@ -1794,15 +1650,9 @@ function loadCrossProjOpts(sel, currentTaskId) {
   `</div>`;
 }
 
-function addLogInModal(tid, parentId) {
-  let task = null;
+function addLogInModal(tid) {
   const proj = getProj(st.catId, st.projId);
-  if (parentId) {
-    const parent = getTask(proj, parentId);
-    task = (parent?.subtasks||[]).find(s => s.id===tid);
-  } else {
-    task = getTask(proj, tid);
-  }
+  const task = getTask(proj, tid);
   if (!task) return;
   const text = document.getElementById('new-log').value.trim();
   if (!text) return;
@@ -1819,17 +1669,9 @@ function addLogInModal(tid, parentId) {
 // ═══════════════════════════════════════════════════════
 // TASK ACTIONS
 // ═══════════════════════════════════════════════════════
-function completeAny(tid, parentId) {
+function completeAny(tid) {
   const proj = getProj(st.catId, st.projId); if (!proj) return;
-  let task, isSub = false;
-  if (parentId) {
-    const parent = getTask(proj, parentId);
-    task = (parent?.subtasks||[]).find(s => s.id===tid);
-    isSub = true;
-  } else {
-    task = getTask(proj, tid);
-  }
-  if (!task) return;
+  const task = getTask(proj, tid); if (!task) return;
 
   const validSucc = (task.successors||[]).filter(s => s.taskId && findInProj(proj, s.taskId));
   if (validSucc.length) {
@@ -1874,11 +1716,9 @@ function openBranchModal(task, proj, successors) {
   });
 }
 
-function quickLog(tid, parentId) {
+function quickLog(tid) {
   const proj = getProj(st.catId, st.projId); if (!proj) return;
-  let task = parentId
-    ? (getTask(proj, parentId)?.subtasks||[]).find(s => s.id===tid)
-    : getTask(proj, tid);
+  const task = getTask(proj, tid);
   if (!task) return;
   openModal('Logregel toevoegen',`
     <div class="fg"><label>Logregel voor "${esc(task.title)}"</label>
@@ -1904,26 +1744,9 @@ function delTask(tid) {
   save(); renderMain(); closeModal();
 }
 
-function delSubtask(sid, parentId) {
+function togglePin(tid) {
   const proj = getProj(st.catId, st.projId); if (!proj) return;
-  const parent = getTask(proj, parentId); if (!parent) return;
-  const sub = (parent.subtasks||[]).find(s => s.id===sid); if (!sub) return;
-  if (sub.pinned) { alert('Maak de subtaak eerst los (📌) voordat je hem verwijdert.'); return; }
-  if (!confirm(`Verwijder subtaak "${sub.title}"?`)) return;
-  pushUndo();
-  parent.subtasks = parent.subtasks.filter(s => s.id!==sid);
-  save(); renderMain(); closeModal();
-}
-
-function togglePin(tid, parentId) {
-  const proj = getProj(st.catId, st.projId); if (!proj) return;
-  let task;
-  if (parentId) {
-    const parent = getTask(proj, parentId);
-    task = (parent?.subtasks||[]).find(s => s.id===tid);
-  } else {
-    task = getTask(proj, tid);
-  }
+  const task = getTask(proj, tid);
   if (!task) return;
   pushUndo();
   if (task.depPinned) {
@@ -1938,10 +1761,7 @@ function togglePin(tid, parentId) {
 function pinAll(cid, pid, val) {
   const proj = getProj(cid, pid); if (!proj) return;
   pushUndo();
-  proj.tasks.forEach(t => {
-    t.pinned = val;
-    (t.subtasks||[]).forEach(s => s.pinned = val);
-  });
+  proj.tasks.forEach(t => { t.pinned = val; });
   save(); renderMain();
 }
 

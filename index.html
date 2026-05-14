@@ -903,6 +903,7 @@ function renderProjectBlock(cat, proj) {
       </div>
       ${projProgressHtml(proj)}
       <div class="pbh-acts">
+        <button class="btn btn-secondary" style="font-size:11px;padding:4px 9px;" onclick="st.catId='${cat.id}';st.projId='${proj.id}';openCentralLog('${proj.id}')">📋 Log</button>
         <button class="btn btn-secondary" style="font-size:11px;padding:4px 9px;" onclick="pinAll('${cat.id}','${proj.id}',true)" title="Alles pinnen">📌+</button>
         <button class="btn btn-secondary" style="font-size:11px;padding:4px 9px;" onclick="pinAll('${cat.id}','${proj.id}',false)" title="Alles losmaken">📌−</button>
         <button class="btn btn-secondary" style="font-size:11px;padding:4px 9px;" onclick="st.catId='${cat.id}';st.projId='${proj.id}';editProjectMeta()">⚙</button>
@@ -1999,6 +2000,71 @@ function applyTemplateToForm(templateId) {
       <input class="link-url" type="text" value="${esc(l.url)}" placeholder="https://…">
       <button class="rm-btn" onclick="this.closest('.link-row').remove()">✕</button>
     </div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════
+// CENTRAAL LOGBOEK
+// ═══════════════════════════════════════════════════════
+function openCentralLog(projId) {
+  const r = findProjById(projId); if (!r) return;
+  const proj = r.proj;
+
+  // Verzamel alle logregels van alle taken
+  const allEntries = [];
+  for (const task of proj.tasks) {
+    for (const entry of (task.logEntries||[])) {
+      // On-the-fly backward compat: voeg processed toe als het er niet is
+      if (entry.processed === undefined) entry.processed = false;
+      allEntries.push({taskTitle: task.title, taskId: task.id, entry});
+    }
+  }
+  // Sorteer nieuwste eerst (op basis van entry.id = timestamp-based uid)
+  allEntries.sort((a, b) => (b.entry.id||'').localeCompare(a.entry.id||''));
+
+  function logBodyHtml() {
+    if (!allEntries.length) return '<div style="color:var(--muted);font-size:13px;">Geen logregels in dit project.</div>';
+    return allEntries.map((item, idx) => `
+      <div class="log-entry" id="cle-${idx}" style="padding:7px 0;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:3px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-size:10px;color:var(--muted);font-weight:600;">${esc(item.taskTitle)}</span>
+          <span class="log-ts">${esc(item.entry.timestamp||'')}</span>
+          <span style="flex:1"></span>
+          <button class="ca-btn ca-edit" style="font-size:10px;padding:2px 6px;" onclick="centralLogMarkProcessed(${idx},'${projId}')" title="Markeer als verwerkt">✓ Verwerkt</button>
+          <button class="ca-btn ca-edit" style="font-size:10px;padding:2px 6px;" onclick="centralLogEdit(${idx},'${projId}')" title="Bewerken">✏</button>
+        </div>
+        <div id="cle-text-${idx}" style="font-size:12px;${item.entry.processed?'color:var(--red);':'color:var(--text);'}">${renderMarkup(item.entry.text||'')}</div>
+      </div>`).join('');
+  }
+
+  openModal(`📋 Logboek — ${esc(proj.name)}`, `<div id="central-log-body">${logBodyHtml()}</div>`, () => true);
+  const ok = document.getElementById('modal-ok');
+  if (ok) ok.style.display='none';
+  const cancel = document.querySelector('.modal-foot .btn-secondary');
+  if (cancel) cancel.textContent='Sluiten';
+
+  // Expose helpers op window zodat inline onclick ze kunnen bereiken
+  window._clEntries = allEntries;
+  window._clProjId = projId;
+}
+
+function centralLogMarkProcessed(idx, projId) {
+  const entries = window._clEntries; if (!entries) return;
+  const item = entries[idx]; if (!item) return;
+  item.entry.processed = true;
+  save();
+  const textEl = document.getElementById('cle-text-'+idx);
+  if (textEl) textEl.style.color = 'var(--red)';
+}
+
+function centralLogEdit(idx, projId) {
+  const entries = window._clEntries; if (!entries) return;
+  const item = entries[idx]; if (!item) return;
+  const newText = prompt('Logregel bewerken:', item.entry.text||'');
+  if (newText === null) return;
+  item.entry.text = newText.trim();
+  save();
+  const textEl = document.getElementById('cle-text-'+idx);
+  if (textEl) textEl.innerHTML = renderMarkup(item.entry.text);
 }
 
 // ═══════════════════════════════════════════════════════

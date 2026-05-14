@@ -313,11 +313,14 @@ textarea.fc{resize:vertical;min-height:72px;}
 .sr-proj{font-size:10px;color:rgba(255,255,255,.45);margin-top:1px;}
 .sb-nav-wrap{flex:1;overflow-y:auto;position:relative;}
 
-/* BINNEN-PROJECT ARCS & VERBINDINGSPORT (#12) */
+/* BINNEN-PROJECT ARCS & VERBINDINGSPUNTEN */
 .proj-tl-area{position:relative;}
-.conn-port{position:absolute;right:-7px;top:50%;transform:translateY(-50%);width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid #fff;cursor:crosshair;opacity:0;transition:opacity .15s,transform .15s;z-index:10;box-shadow:0 1px 4px rgba(0,0,0,.25);}
-.card:hover .conn-port{opacity:.7;}
-.conn-port:hover{opacity:1!important;transform:translateY(-50%) scale(1.25);}
+.conn-dot{position:absolute;width:8px;height:8px;border-radius:50%;background:#94a3b8;border:1.5px solid #fff;cursor:crosshair;opacity:0;transition:opacity .15s;z-index:10;box-shadow:0 1px 3px rgba(0,0,0,.2);}
+.card:hover .conn-dot{opacity:1;}
+.conn-tl{top:-4px;left:-4px;}
+.conn-tr{top:-4px;right:-4px;}
+.conn-bl{bottom:-4px;left:-4px;}
+.conn-br{bottom:-4px;right:-4px;}
 .card.conn-target{outline:2px solid var(--accent);outline-offset:3px;box-shadow:0 0 0 5px rgba(52,152,219,.12);}
 </style>
 </head>
@@ -707,7 +710,8 @@ function cardHtml(task, proj, parentTask) {
   const hasSubs = !isSub && (task.subtasks||[]).length > 0;
   const expanded = hasSubs && task.isExpanded;
   const subCls = isSub ? ' sub-card' : '';
-  const isPinned = !isSub && task.position === 0 && proj.tasks.length > 1;
+  const minPosition = !isSub && proj.tasks.length > 0 ? Math.min(...proj.tasks.map(t => t.position)) : null;
+  const isFirstPos = !isSub && task.position === minPosition && proj.tasks.length > 1;
 
   // (#3) deadline chip — only dot, no border override on card
   let dlChip = '';
@@ -722,18 +726,26 @@ function cardHtml(task, proj, parentTask) {
   const ctx = `st.projId='${proj.id}';`;
   const pinFn = isSub ? `${ctx}togglePin('${task.id}','${parentTask.id}')` : `${ctx}togglePin('${task.id}',null)`;
   const isDepPinned = task.depPinned === true;  // vastgepind door pijlverbinding
-  const pinIcon = isDepPinned ? '🔵' : '📌';
-  const pinTitle = isDepPinned ? 'Vastgezet door verbinding — klik om positie vrij te geven' : (task.pinned ? 'Losmaken' : 'Vastzetten');
-  const pinBtn = `<button class="pin-btn${(task.pinned||isDepPinned)?' is-pinned':''}" onclick="event.stopPropagation();${pinFn}" title="${pinTitle}">${pinIcon}</button>`;
+  const pinIcon = isDepPinned ? '🔵' : (isFirstPos && !task.pinned ? '🔒' : '📌');
+  const pinTitle = isDepPinned ? 'Vastgezet door verbinding — klik om positie vrij te geven' : (isFirstPos && !task.pinned ? 'Eerste kaart — kan niet versleept worden' : (task.pinned ? 'Losmaken' : 'Vastzetten'));
+  const pinBtn = `<button class="pin-btn${(task.pinned||isDepPinned||isFirstPos)?' is-pinned':''}" onclick="event.stopPropagation();${isFirstPos&&!task.pinned&&!isDepPinned?'':pinFn}" title="${pinTitle}">${pinIcon}</button>`;
+
+  const canDrag = !isSub && !task.pinned && !task.depPinned && !isFirstPos;
+  const connDots = !isSub ? `
+    <div class="conn-dot conn-tl" data-side="tl" onmousedown="startConnDrag(event,'${task.id}','${proj.id}',this)"></div>
+    <div class="conn-dot conn-tr" data-side="tr" onmousedown="startConnDrag(event,'${task.id}','${proj.id}',this)"></div>
+    <div class="conn-dot conn-bl" data-side="bl" onmousedown="startConnDrag(event,'${task.id}','${proj.id}',this)"></div>
+    <div class="conn-dot conn-br" data-side="br" onmousedown="startConnDrag(event,'${task.id}','${proj.id}',this)"></div>` : '';
 
   if (isKlaar) {
     const subToggle = hasSubs ? `<div class="subtask-toggle" onclick="toggleExpand('${task.id}','${proj.id}')">
       ${expanded?'▼':'▶'} ${task.subtasks.length} subtaak${task.subtasks.length!==1?'en':''}
     </div>` : '';
     const editFn = isSub ? `${ctx}openEditSubtask('${task.id}','${parentTask.id}')` : `${ctx}openEditTask('${task.id}')`;
-    return `<div class="card c-klaar${subCls}" data-tid="${task.id}" ${isSub?`data-parent="${parentTask.id}"`:(!task.pinned && !task.depPinned?'draggable="true"':'')}>
+    return `<div class="card c-klaar${subCls}" data-tid="${task.id}" ${isSub?`data-parent="${parentTask.id}"`:''} ${canDrag?'draggable="true"':''}>
       ${pinBtn}
-      ${!isSub && !task.pinned && !task.depPinned?'<span class="drag-hdl">⠿</span>':''}
+      ${canDrag?'<span class="drag-hdl">⠿</span>':''}
+      ${connDots}
       <div class="card-head ch-klaar">
         <span class="badge b-klaar">✓ Afgerond</span>
         <div class="card-title">${esc(task.title)}</div>
@@ -801,10 +813,10 @@ function cardHtml(task, proj, parentTask) {
   const logFn   = isSub ? `${ctx}quickLog('${task.id}','${parentTask.id}')` : `${ctx}quickLog('${task.id}',null)`;
   const doneFn  = isSub ? `${ctx}completeAny('${task.id}','${parentTask.id}')` : `${ctx}completeAny('${task.id}',null)`;
 
-  return `<div class="card c-${status}${subCls}" data-tid="${task.id}" ${isSub?`data-parent="${parentTask.id}"`:(!task.pinned && !task.depPinned?'draggable="true"':'')}>
+  return `<div class="card c-${status}${subCls}" data-tid="${task.id}" ${isSub?`data-parent="${parentTask.id}"`:''} ${canDrag?'draggable="true"':''}>
     ${pinBtn}
-    ${!isSub && !task.pinned && !task.depPinned?'<span class="drag-hdl">⠿</span>':''}
-    ${!isSub?`<div class="conn-port" title="Sleep om verbinding te maken" onmousedown="startConnDrag(event,'${task.id}','${proj.id}')"></div>`:''}
+    ${canDrag?'<span class="drag-hdl">⠿</span>':''}
+    ${connDots}
     <div class="card-head ch-${status}">
       <span class="badge b-${status}">${statusLabels[status]||status}</span>
       <div class="card-title">${esc(task.title)}</div>
@@ -2052,18 +2064,17 @@ function closeModal() {
 }
 
 // ═══════════════════════════════════════════════════════
-// DRAG-CONNECT (#13)
+// DRAG-CONNECT (4 hoekpunten per kaart)
 // ═══════════════════════════════════════════════════════
 let connDrag = null;
 
-function startConnDrag(e, fromId, projId) {
+function startConnDrag(e, fromId, projId, portEl) {
   e.stopPropagation();
   e.preventDefault();
-  const fromEl = document.querySelector(`[data-tid="${fromId}"]`);
-  if (!fromEl) return;
-  const fr = fromEl.getBoundingClientRect();
-  const startX = fr.right - 3;
-  const startY = fr.top + fr.height / 2;
+  const fromSide = portEl ? portEl.dataset.side : 'tr';
+  const pr = portEl.getBoundingClientRect();
+  const startX = pr.left + pr.width / 2;
+  const startY = pr.top + pr.height / 2;
 
   const overlay = document.createElementNS('http://www.w3.org/2000/svg','svg');
   overlay.id = 'conn-drag-svg';
@@ -2077,7 +2088,7 @@ function startConnDrag(e, fromId, projId) {
     stroke="#3498db" stroke-width="2" stroke-dasharray="7 4" marker-end="url(#cd-arr)"/>`;
   document.body.appendChild(overlay);
 
-  connDrag = {fromId, projId};
+  connDrag = {fromId, projId, fromSide};
   document.addEventListener('mousemove', onConnDragMove);
   document.addEventListener('mouseup', onConnDragEnd);
 }
@@ -2103,20 +2114,49 @@ function onConnDragEnd(e) {
   document.querySelectorAll('.card.conn-target').forEach(c => c.classList.remove('conn-target'));
 
   const el = document.elementFromPoint(e.clientX, e.clientY);
-  const targetCard = el?.closest('.card');
+  const dotEl = el?.closest('.conn-dot');
+  const targetCard = dotEl ? dotEl.closest('.card') : el?.closest('.card');
   const toId = targetCard?.dataset?.tid;
+  const toSide = dotEl ? dotEl.dataset.side : null;
 
   if (toId && toId !== connDrag.fromId) {
     const r = findProjById(connDrag.projId);
     if (r) {
+      const fromTask = findInProj(r.proj, connDrag.fromId);
       const toTask = findInProj(r.proj, toId);
-      if (toTask) {
+      if (toTask && fromTask) {
         if ((toTask.requiredTasks||[]).includes(connDrag.fromId)) {
           toast('Verbinding bestaat al');
         } else {
           pushUndo();
           if (!toTask.requiredTasks) toTask.requiredTasks = [];
           toTask.requiredTasks.push(connDrag.fromId);
+          fromTask.depPinned = true;
+          toTask.depPinned = true;
+
+          // Auto-reorder op basis van de side van het eindpunt (toSide)
+          const fromSide = connDrag.fromSide;
+          const tasks = r.proj.tasks;
+          if (toSide === 'tr' || toSide === 'br') {
+            // Via rechter port: source krijgt position = toTask.position + 1
+            const targetPos = toTask.position;
+            tasks.forEach(t => {
+              if (!t.pinned && !t.depPinned && t.id !== connDrag.fromId && t.position > targetPos) {
+                t.position += 1;
+              }
+            });
+            fromTask.position = targetPos + 1;
+          } else if (toSide === 'tl' || toSide === 'bl') {
+            // Via linker port: source krijgt position = toTask.position
+            const targetPos = toTask.position;
+            tasks.forEach(t => {
+              if (!t.pinned && !t.depPinned && t.id !== connDrag.fromId && t.position >= targetPos) {
+                t.position += 1;
+              }
+            });
+            fromTask.position = targetPos;
+          }
+
           save(); renderMain();
           toast('Verbinding aangemaakt — klik op de boog om te verwijderen');
         }

@@ -256,6 +256,8 @@ textarea.fc{resize:vertical;min-height:72px;}
 .fmt-btn{background:#f0f2f5;border:1px solid var(--border);border-radius:4px;padding:2px 8px;cursor:pointer;font-size:12px;font-family:inherit;line-height:1.5;transition:background .15s;}
 .fmt-btn:hover{background:#e4e8ed;border-color:#bbb;}
 .toast{position:fixed;bottom:22px;right:22px;background:#2c3e50;color:#fff;padding:9px 16px;border-radius:8px;font-size:12px;z-index:2000;box-shadow:var(--shadow-lg);animation:tin .2s ease,tout .25s ease 2.2s forwards;}
+.save-ind{position:fixed;bottom:12px;right:12px;background:rgba(39,174,96,.9);color:#fff;padding:4px 10px;border-radius:5px;font-size:11px;pointer-events:none;opacity:0;transition:opacity .25s;z-index:1999;}
+.save-ind.show{opacity:1;}
 @keyframes tin{from{transform:translateY(16px);opacity:0}to{transform:none;opacity:1}}
 @keyframes tout{from{opacity:1}to{opacity:0}}
 ::-webkit-scrollbar{width:5px;height:5px;}
@@ -329,7 +331,9 @@ textarea.fc{resize:vertical;min-height:72px;}
 <div class="sidebar">
   <div class="sb-head">
     <h1>📋 Projectbeheer</h1>
+    <div id="sb-filename" style="font-size:11px;color:rgba(255,255,255,.5);cursor:pointer;padding:2px 4px;border-radius:3px;margin-bottom:4px;" onclick="editFileName()" title="Klik om naam te bewerken">Projectbeheer</div>
     <div class="sb-head-btns">
+      <button class="sb-btn" onclick="newFile()">✦ Nieuw</button>
       <button class="sb-btn" onclick="exportData()">⬇ Export</button>
       <label class="sb-btn" style="cursor:pointer">⬆ Import<input type="file" accept=".json" onchange="importData(event)" hidden></label>
     </div>
@@ -350,6 +354,7 @@ textarea.fc{resize:vertical;min-height:72px;}
 <main class="main" id="main"></main>
 <div id="modal-root"></div>
 <div id="toasts"></div>
+<div id="save-ind" class="save-ind">✓ Opgeslagen</div>
 
 <script>
 'use strict';
@@ -435,9 +440,19 @@ function load() {
   for (const c of (db.categories||[])) {
     if (c.archived === undefined) c.archived = false;
   }
+  // Backward compat: fileName
+  if (!db.fileName) db.fileName = 'Projectbeheer';
 }
+let _saveIndTimer = null;
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(db)); } catch(e) {}
+  // Toon save-indicator
+  const ind = document.getElementById('save-ind');
+  if (ind) {
+    ind.classList.add('show');
+    clearTimeout(_saveIndTimer);
+    _saveIndTimer = setTimeout(() => ind.classList.remove('show'), 1800);
+  }
 }
 function pushUndo() {
   undoStack.push(JSON.stringify(db));
@@ -459,11 +474,32 @@ function redo() {
 
 function exportData() {
   const blob = new Blob([JSON.stringify(db,null,2)],{type:'application/json'});
+  const fname = (db.fileName||'Projectbeheer').replace(/[^a-zA-Z0-9_\-]/g,'_');
   const a = Object.assign(document.createElement('a'),{
     href:URL.createObjectURL(blob),
-    download:'projectbeheer-'+new Date().toISOString().slice(0,10)+'.json'
+    download: fname + '-' + new Date().toISOString().slice(0,10)+'.json'
   });
   a.click(); URL.revokeObjectURL(a.href); toast('Geëxporteerd');
+}
+
+function editFileName() {
+  const cur = db.fileName||'Projectbeheer';
+  const n = prompt('Naam van dit bestand:', cur);
+  if (n === null) return;
+  const name = n.trim() || 'Projectbeheer';
+  db.fileName = name;
+  const el = document.getElementById('sb-filename');
+  if (el) el.textContent = name;
+  save();
+}
+
+function newFile() {
+  if (!confirm('Alle data wissen en nieuw bestand starten?')) return;
+  pushUndo();
+  db = {categories:[], fileName:'Projectbeheer'};
+  save();
+  st.catId = null; st.projId = null;
+  render();
 }
 function importData(ev) {
   const f = ev.target.files[0]; if (!f) return;
@@ -530,7 +566,13 @@ const st = {
 // ═══════════════════════════════════════════════════════
 // RENDER
 // ═══════════════════════════════════════════════════════
-function render() { renderSidebar(); renderMain(); }
+function render() {
+  renderSidebar();
+  renderMain();
+  // Sync bestandsnaam in sidebar
+  const fnEl = document.getElementById('sb-filename');
+  if (fnEl) fnEl.textContent = db.fileName||'Projectbeheer';
+}
 
 function renderSidebar() {
   document.getElementById('dl-nav').classList.toggle('active', st.view === 'deadlines');
